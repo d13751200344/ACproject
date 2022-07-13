@@ -9,6 +9,11 @@ const session = require("express-session");
 const flash = require("connect-flash");
 const User = require("./models/user");
 //引入 userSchema (在 models資料夾裡的 user.js內容)
+const bcrypt = require("bcrypt");
+//引入並使用 bcrypt (hashing&salting passwords)
+const saltRounds = 10;
+//為hash function加密次數，若數字=X，則加密次數為2的X次方次。建議10或12次
+
 
 app.use(express.static("public"));
 app.use(bodyParser.urlencoded({extended: true}));
@@ -42,25 +47,44 @@ app.get("/signup", (req, res) => {
     res.render("signup");
 });
 
+//在使用者輸入資料送出 post req 進行 signup 時即要開始加密
 app.post("/signup", (req, res, next) => {
-    //console.log(req.body);  終端機將顯示使用者輸入的帳密
-    let { username, password } = req.body;
-	/* 下方接著創建newUser，assign它為新的User(引入的Schema)，其資料中的username與password等於上方從req.body所提取之值 */
-	let newUser = new User({ username: username, password: password});
-	try {
-		newUser.save()
-			.then(()=>{
-				res.send("Data has been saved.")
-			})
-			.catch((e)=>{
-				console.log(e);
-				res.send("Failed to save data.")
-			});
-	} catch(err) {
-		next(err);
-	}
+	//console.log(req.body);  終端機將顯示使用者輸入的帳密
+	let { username, password } = req.body;  //提取使用者所輸入的帳密
+	/* 開始加密。先造鹽，參數1為加密次數(在上方const處)，參數二則是callback；
+	callback中的參數1處理錯誤，參數二則是產生加密salt */
+	bcrypt.genSalt(saltRounds, (err, salt) => {
+		  //下方處理『加密發生問題』的錯誤。err對應參數
+		if (err){
+			next(err);
+		}
+		/* 下方所執行的是加鹽進行加密，參數1是對應上方所提取的req.body.password，
+		參數2對應上方salt加鹽，參數3的callback則是要開始加密並將資料存入資料庫，
+		參數hash即是將上方的salt加入密碼進行加密 */
+		bcrypt.hash(password, salt, (err, hash) => {
+			if (err){
+				next(err);
+			}
+			//要在整個加密的環節(function)中進行使用者的資料儲存才能對資料進行加密
+			let newUser = new User({ username: username, password: hash});
+			//上方的password值對應的是加密過的hash而非req.body中的password
+			try {
+				newUser
+					.save()
+					.then(()=>{
+						res.send("Data has been saved.")
+					})
+					.catch((e)=>{
+						console.log(e);
+						res.send("Failed to save data.")
+					});
+			} catch(err) {
+				next(err);
+			}
+		});
+	});
 });
-//當使用者輸入帳密之後，按下送出＝在/signup中進行 post req，則系統將回以"Thanks for posting"
+
 
 app.get("/login", (req, res) => {
 	res.render("login");
